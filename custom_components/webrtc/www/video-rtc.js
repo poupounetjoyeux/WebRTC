@@ -14,6 +14,8 @@
  * - Customized built-in elements (extends HTMLVideoElement) because Safari
  * - Autoplay for WebRTC in Safari
  */
+import * as THREE from './three.module.min.js';
+
 export class VideoRTC extends HTMLElement {
     constructor() {
         super();
@@ -49,6 +51,12 @@ export class VideoRTC extends HTMLElement {
          * @type {boolean}
          */
         this.background = false;
+
+        /**
+         * [config] Dewarp fisheye image rendering in spherical world. Default `false`.
+         * @type {boolean}
+         */
+        this.fisheye = false;
 
         /**
          * [config] Run stream only when player in the viewport. Stop when user scroll out player.
@@ -235,6 +243,108 @@ export class VideoRTC extends HTMLElement {
     }
 
     /**
+     * Init the Three.js environment to render fisheye camera.
+     */
+    initFisheye() {
+        const distance = 1;
+        const maxLatitude = 42;
+        
+        let isUserInteracting = false,
+                lon = 0, lat = 85,
+                phi = 0, theta = 0,
+                onPointerDownPointerX = 0,
+                onPointerDownPointerY = 0,
+                onPointerDownLon = 0,
+                onPointerDownLat = 0;
+        
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight);
+        
+        const renderer = new THREE.WebGLRenderer();
+        renderer.setPixelRatio( window.devicePixelRatio );
+        renderer.setSize('100%', '100%');
+        renderer.setAnimationLoop( animate );
+        this.appendChild( renderer.domElement );
+        
+        const texture = new THREE.VideoTexture(this.video);
+        const material = new THREE.MeshBasicMaterial( {  map: texture } );
+        const geometry = new THREE.SphereGeometry(500, 60, 40);
+        geometry.scale( - 1, 1, 1 );
+        
+        var normals = geometry.attributes.normal.array;
+        var uvs = geometry.attributes.uv.array;
+        
+        const imgWidth = 1;
+        for ( var i = 0, l = normals.length / 3; i < l; i ++ ) {
+        
+            var x = normals[ i * 3 + 0 ];
+            var y = normals[ i * 3 + 1 ];
+            var z = normals[ i * 3 + 2 ];
+        
+            var yaw = Math.atan2(z, x)/(Math.PI);
+            var pitch = Math.asin(y)/Math.PI;
+            pitch = pitch * -1 + 0.5;//flip and make zero to one
+            pitch *= imgWidth;
+        
+            if(pitch < 0.5){
+                uvs[ i * 2 ] = 0.5 + Math.cos(yaw * Math.PI)*pitch;
+                uvs[ i * 2 + 1 ] = 0.5 + Math.sin(yaw * Math.PI)*pitch; 
+            }else{
+                uvs[ i * 2 ] = undefined;
+                uvs[ i * 2 + 1 ] = undefined;
+            }
+        }
+        geometry.rotateZ(Math.PI);
+        
+        const sphere = new THREE.Mesh(geometry, material)
+        scene.add(sphere)
+        
+        function onPointerDown( event ) {
+        
+            isUserInteracting = true;
+        
+            onPointerDownPointerX = event.clientX;
+            onPointerDownPointerY = event.clientY;
+        
+            onPointerDownLon = lon;
+            onPointerDownLat = lat;
+        
+        }
+        
+        function onPointerMove( event ) {
+        
+            if ( isUserInteracting === true ) {
+        
+                lon = ( onPointerDownPointerX - event.clientX ) * 0.1 + onPointerDownLon;
+                lat = ( onPointerDownPointerY - event.clientY ) * 0.1 + onPointerDownLat;
+        
+            }
+        
+        }
+        
+        function onPointerUp() {
+            isUserInteracting = false;
+        }
+        
+        function animate() {
+            lat = Math.max(maxLatitude, Math.min( 85, lat));
+            phi = THREE.MathUtils.degToRad( 90 - lat );
+            theta = THREE.MathUtils.degToRad( lon );
+        
+            camera.position.x = distance * Math.sin( phi ) * Math.cos( theta );
+            camera.position.y = distance * Math.cos( phi );
+            camera.position.z = distance * Math.sin( phi ) * Math.sin( theta );
+        
+            camera.lookAt( 0, 0, 0 );
+            renderer.render( scene, camera );
+        }
+        
+        this.addEventListener( 'pointerdown', onPointerDown );
+        this.addEventListener( 'pointermove', onPointerMove );
+        this.addEventListener( 'pointerup', onPointerUp );
+    }
+
+    /**
      * Creates child DOM elements. Called automatically once on `connectedCallback`.
      */
     oninit() {
@@ -243,11 +353,15 @@ export class VideoRTC extends HTMLElement {
         this.video.playsInline = true;
         this.video.preload = 'auto';
 
-        this.video.style.display = 'block'; // fix bottom margin 4px
-        this.video.style.width = '100%';
-        this.video.style.height = '100%';
-
-        this.appendChild(this.video);
+        if(!this.fisheye) {
+            this.video.style.display = 'block'; // fix bottom margin 4px
+            this.video.style.width = '100%';
+            this.video.style.height = '100%';
+    
+            this.appendChild(this.video);
+        } else {
+            this.initFisheye();
+        }
 
         this.video.addEventListener('error', ev => {
             console.warn(ev);

@@ -12,6 +12,8 @@ class WebRTCCamera extends VideoRTC {
 
         if (config.background) this.background = config.background;
 
+        if(config.fisheye) this.fisheye = config.fisheye;
+
         if (config.intersection === 0) this.visibilityThreshold = 0;
         else this.visibilityThreshold = config.intersection || 0.75;
 
@@ -43,6 +45,8 @@ class WebRTCCamera extends VideoRTC {
          *
          *     mse: boolean,
          *     webrtc: boolean,
+         * 
+         *     fisheye:boolean,
          *
          *     digital_ptz:{
          *         mouse_drag_pan: boolean,
